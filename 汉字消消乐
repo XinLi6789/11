@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>汉字拼音消消乐</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            text-align: center;
+        }
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 20px;
+        }
+        .cell {
+            background-color: #4CAF50;
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+        }
+        .shake {
+            animation: shake 0.5s;
+        }
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(5px); }
+            50% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+            100% { transform: translateX(0); }
+        }
+        #trophy {
+            display: none;
+            width: 100px;
+            margin: 20px;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <input type="file" id="excelUpload" accept=".xlsx">
+        <button onclick="downloadExample()">下载示例数据</button>
+        <button id="replayBtn" disabled>再玩一次</button>
+        <div id="gameArea" style="display: none;">
+            <div class="game-grid" id="grid"></div>
+            <img id="trophy" src="https://cdn-icons-png.flaticon.com/512/1021/1021116.png" alt="奖杯">
+        </div>
+        <audio id="applause" src="https://actions.google.com/sounds/v1/crowds/applause.ogg"></audio>
+    </div>
+
+    <script>
+        let gameData = [];
+        let selectedItems = [];
+        let remainingPairs = [];
+
+        class Game {
+            constructor() {
+                this.replayBtn = document.getElementById('replayBtn');
+                this.initEventListeners();
+            }
+
+            initEventListeners() {
+                document.getElementById('excelUpload').addEventListener('change', this.handleFileUpload);
+                this.replayBtn.addEventListener('click', () => this.startNewGame());
+            }
+
+            handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    gameData = XLSX.utils.sheet_to_json(worksheet);
+                    remainingPairs = [...gameData];
+                    document.getElementById('gameArea').style.display = 'block';
+                    this.startNewGame();
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            startNewGame() {
+                if (remainingPairs.length < 8) {
+                    alert('本轮游戏已结束！');
+                    this.replayBtn.disabled = true;
+                    return;
+                }
+
+                const selectedPairs = this.getRandomPairs();
+                this.createGrid(selectedPairs);
+                this.replayBtn.disabled = true;
+                document.getElementById('trophy').style.display = 'none';
+            }
+
+            getRandomPairs() {
+                const pairs = [];
+                while (pairs.length < 8 && remainingPairs.length > 0) {
+                    const index = Math.floor(Math.random() * remainingPairs.length);
+                    pairs.push(remainingPairs.splice(index, 1)[0]);
+                }
+                return pairs;
+            }
+
+            createGrid(pairs) {
+                const grid = document.getElementById('grid');
+                grid.innerHTML = '';
+                
+                const elements = [];
+                pairs.forEach(pair => {
+                    elements.push({ type: 'char', value: pair.汉字 });
+                    elements.push({ type: 'pinyin', value: pair.拼音 });
+                });
+
+                elements.sort(() => Math.random() - 0.5);
+
+                elements.forEach((element, index) => {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.textContent = element.value;
+                    cell.dataset.type = element.type;
+                    cell.dataset.originalIndex = Math.floor(index/2);
+                    cell.addEventListener('click', this.handleCellClick);
+                    grid.appendChild(cell);
+                });
+            }
+
+            handleCellClick = (e) => {
+                if (selectedItems.length >= 2 || e.target.classList.contains('matched')) return;
+
+                const cell = e.target;
+                cell.style.backgroundColor = '#ff9800';
+                selectedItems.push(cell);
+
+                if (selectedItems.length === 2) {
+                    this.checkMatch();
+                }
+            }
+
+            checkMatch() {
+                const [first, second] = selectedItems;
+                const isTypeMatch = first.dataset.type !== second.dataset.type;
+                const isIndexMatch = first.dataset.originalIndex === second.dataset.originalIndex;
+
+                if (isTypeMatch && isIndexMatch) {
+                    this.handleMatchSuccess(first, second);
+                } else {
+                    this.handleMatchFail(first, second);
+                }
+            }
+
+            handleMatchSuccess(first, second) {
+                first.classList.add('matched');
+                second.classList.add('matched');
+                setTimeout(() => {
+                    first.style.opacity = '0';
+                    second.style.opacity = '0';
+                }, 500);
+
+                if (document.querySelectorAll('.cell:not(.matched)').length === 0) {
+                    document.getElementById('trophy').style.display = 'block';
+                    document.getElementById('applause').play();
+                    this.replayBtn.disabled = false;
+                }
+                selectedItems = [];
+            }
+
+            handleMatchFail(first, second) {
+                first.classList.add('shake');
+                second.classList.add('shake');
+                setTimeout(() => {
+                    first.style.backgroundColor = '#4CAF50';
+                    second.style.backgroundColor = '#4CAF50';
+                    first.classList.remove('shake');
+                    second.classList.remove('shake');
+                    selectedItems = [];
+                }, 500);
+            }
+        }
+
+        function downloadExample() {
+            const exampleData = [
+                { 汉字: '你', 拼音: 'nǐ' },
+                { 汉字: '好', 拼音: 'hǎo' },
+                { 汉字: '谢谢', 拼音: 'xièxie' },
+                { 汉字: '再见', 拼音: 'zàijiàn' },
+                { 汉字: '中国', 拼音: 'Zhōngguó' },
+                { 汉字: '北京', 拼音: 'Běijīng' },
+                { 汉字: '爱', 拼音: 'ài' },
+                { 汉字: '学校', 拼音: 'xuéxiào' }
+            ];
+
+            const worksheet = XLSX.utils.json_to_sheet(exampleData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "数据");
+            XLSX.writeFile(workbook, "示例数据.xlsx");
+        }
+
+        // 初始化游戏
+        new Game();
+    </script>
+</body>
+</html>
